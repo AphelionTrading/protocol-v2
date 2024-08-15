@@ -15,10 +15,10 @@ use crate::state::spot_fulfillment_params::{ExternalSpotFill, SpotFulfillmentPar
 use crate::state::spot_market::{SpotBalanceType, SpotFulfillmentConfigStatus, SpotMarket};
 use crate::state::state::State;
 use crate::state::traits::Size;
-use crate::{load, validate};
+use crate::{load, load_mut, validate};
 use anchor_lang::prelude::*;
 use anchor_lang::prelude::{Account, Program, System};
-use anchor_lang::{account, InstructionData, Key};
+use anchor_lang::{account, Discriminator, InstructionData, Key};
 use anchor_spl::token::{Token, TokenAccount};
 use arrayref::array_ref;
 use openbook_v2_light::instruction::PlaceTakeOrder;
@@ -142,16 +142,33 @@ impl<'a, 'b> OpenbookV2FulfillmentParams<'a, 'b> {
             })?;
         let openbook_v2_fulfillment_config = load!(openbook_v2_fulfillment_config_loader)?;
 
+        // loading market data, validating discriminator and owner - OpenbookV2 id
+        let market: Ref<Market> = load_ref(openbook_v2_market).map_err(|_| ErrorCode::FailedOpenbookV2CPI)?;
+        validate!(
+            openbook_v2_market.data.borrow().starts_with(&openbook_v2_light::Market::discriminator()),
+            ErrorCode::InvalidFulfillmentConfig,
+            "market does not have correct discriminator!",
+        );
+        validate!(
+            &openbook_v2_fulfillment_config.openbook_v2_program_id == openbook_v2_market.owner,
+            ErrorCode::FailedOpenbookV2CPI,
+            "market owner {} needs to be equal to {}!",
+            openbook_v2_market.owner, openbook_v2_fulfillment_config.openbook_v2_program_id
+        );
+
+        // this needs to stay
         validate!(
             openbook_v2_fulfillment_config.status == SpotFulfillmentConfigStatus::Enabled,
             ErrorCode::SpotFulfillmentConfigDisabled
         )?;
 
+        // this needs to stay
         validate!(
             &state.signer == drift_signer.key,
             ErrorCode::InvalidFulfillmentConfig
         )?;
 
+        // this needs to stay
         validate!(
             openbook_v2_fulfillment_config.market_index == base_market.market_index,
             ErrorCode::InvalidFulfillmentConfig,
@@ -160,57 +177,96 @@ impl<'a, 'b> OpenbookV2FulfillmentParams<'a, 'b> {
             base_market.market_index
         )?;
 
+        // this needs to stay
         validate!(
             &base_market.vault == base_market_vault.key,
             ErrorCode::InvalidFulfillmentConfig
         )?;
 
+        // this needs to stay
         validate!(
             &quote_market.vault == quote_market_vault.key,
             ErrorCode::InvalidFulfillmentConfig
         )?;
+
+        // this needs to stay
         validate!(
             &openbook_v2_fulfillment_config.openbook_v2_program_id == openbook_v2_program.key,
             ErrorCode::InvalidFulfillmentConfig
         )?;
 
+        // this needs to be substitute
+        // validate!(
+        //     &openbook_v2_fulfillment_config.openbook_v2_market_authority
+        //         == openbook_v2_market_authority.key,
+        //     ErrorCode::InvalidFulfillmentConfig
+        // )?;
         validate!(
-            &openbook_v2_fulfillment_config.openbook_v2_market_authority
+            &market.market_authority
                 == openbook_v2_market_authority.key,
             ErrorCode::InvalidFulfillmentConfig
         )?;
 
+        // this needs to be substitute
+        // validate!(
+        //     &openbook_v2_fulfillment_config.openbook_v2_event_heap == openbook_v2_event_heap.key,
+        //     ErrorCode::InvalidFulfillmentConfig,
+        //     "Openbook V2 eventheap key does not match"
+        // )?;
         validate!(
-            &openbook_v2_fulfillment_config.openbook_v2_event_heap == openbook_v2_event_heap.key,
+            &market.event_heap == openbook_v2_event_heap.key,
             ErrorCode::InvalidFulfillmentConfig,
             "Openbook V2 eventheap key does not match"
         )?;
+
+        // this needs to be substitute
+        // validate!(
+        //     &openbook_v2_fulfillment_config.openbook_v2_bids == openbook_v2_bids.key,
+        //     ErrorCode::InvalidFulfillmentConfig,
+        //     "Openbook V2 bids key does not match"
+        // )?;
         validate!(
-            &openbook_v2_fulfillment_config.openbook_v2_bids == openbook_v2_bids.key,
+            &market.bids == openbook_v2_bids.key,
             ErrorCode::InvalidFulfillmentConfig,
             "Openbook V2 bids key does not match"
         )?;
+
+        // this needs to be substitute
+        // validate!(
+        //     &openbook_v2_fulfillment_config.openbook_v2_asks == openbook_v2_asks.key,
+        //     ErrorCode::InvalidFulfillmentConfig,
+        //     "Openbook V2 asks key does not match"
+        // )?;
         validate!(
-            &openbook_v2_fulfillment_config.openbook_v2_asks == openbook_v2_asks.key,
+            &market.asks == openbook_v2_asks.key,
             ErrorCode::InvalidFulfillmentConfig,
             "Openbook V2 asks key does not match"
         )?;
+
+        // this needs to be substitute
+        // validate!(
+        //     &openbook_v2_fulfillment_config.openbook_v2_base_vault == openbook_v2_base_vault.key,
+        //     ErrorCode::InvalidFulfillmentConfig,
+        //     "OpenbookV2 quote vault key does not match"
+        // )?;
         validate!(
-            &openbook_v2_fulfillment_config.openbook_v2_base_vault == openbook_v2_base_vault.key,
+            &market.market_base_vault == openbook_v2_base_vault.key,
             ErrorCode::InvalidFulfillmentConfig,
             "OpenbookV2 quote vault key does not match"
         )?;
 
+        // this needs to be substitute
+        // validate!(
+        //     &openbook_v2_fulfillment_config.openbook_v2_quote_vault == openbook_v2_quote_vault.key,
+        //     ErrorCode::InvalidFulfillmentConfig,
+        //     "OpenbookV2 quote vault key does not match"
+        // )?;
         validate!(
-            &openbook_v2_fulfillment_config.openbook_v2_quote_vault == openbook_v2_quote_vault.key,
+            &market.market_quote_vault == openbook_v2_quote_vault.key,
             ErrorCode::InvalidFulfillmentConfig,
             "OpenbookV2 quote vault key does not match"
         )?;
 
-        validate!(
-            &openbook_v2_fulfillment_config.openbook_v2_market == openbook_v2_market.key,
-            ErrorCode::InvalidFulfillmentConfig
-        )?;
         let base_market_vault: Box<Account<TokenAccount>> =
             Box::new(Account::try_from(base_market_vault).map_err(|e| {
                 msg!("{:?}", e);
@@ -221,6 +277,22 @@ impl<'a, 'b> OpenbookV2FulfillmentParams<'a, 'b> {
                 msg!("{:?}", e);
                 ErrorCode::InvalidFulfillmentConfig
             })?);
+
+        // this needs to be substitute - instead of this validate that base mint and quote mint are same as in vaults for drift
+        // validate!(
+        //     &openbook_v2_fulfillment_config.openbook_v2_market == openbook_v2_market.key,
+        //     ErrorCode::InvalidFulfillmentConfig
+        // )?;
+        validate!(
+            market.quote_mint == quote_market_vault.mint,
+            ErrorCode::InvalidFulfillmentConfig
+        )?;
+        validate!(
+            market.base_mint == base_market_vault.mint,
+            ErrorCode::InvalidFulfillmentConfig
+        )?;
+
+
         let token_program: Program<Token> = Program::try_from(*token_program).map_err(|e| {
             msg!("{:?}", e);
             ErrorCode::InvalidFulfillmentConfig
